@@ -1,0 +1,416 @@
+---
+title: "Introduction to Support Vector Machines"
+author: "Antoine Dargier"
+date: '`r Sys.Date()`'
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.height=4, fig.width=6)
+```
+
+# Exercice I. Introduction to C-SVM
+
+For illustrating kernel methods in general and for Support Vector Machines in particular, we consider a very simple classification problem. Let assume that the data is describe in a 1D space divided into two classes ($+1$ and $-1$) as follows:
+
+\begin{equation*}
+\mathcal{S} = \{(\mathbf{x}_1 = 1, y_1 = 1), (\mathbf{x}_2 = 2, y_2 = 1), (\mathbf{x}_3 = 4, y_3 = -1), 
+(\mathbf{x}_4 = 5, y_4 = -1), (\mathbf{x}_5 = 6, y_5 = 1)\}
+\end{equation*}
+
+The following script is used for visualizing the data.
+
+```{r 1_data, echo = TRUE, fig.cap="Data Visualisation", fig.align='default', fig.height=3.5, fig.width=10}
+x = c(1, 2, 4, 5, 6)
+class = c(1, 1, 2, 2, 1)
+
+plot(x, rep(0, 5), pch = c(21, 22)[class], 
+     bg = c("red", "green3")[class], 
+     cex = 1.5, ylim = c(-1.7, 1), xlim = c(0, 8), 
+     ylab = "", xlab = "x", las = 2)
+
+grid()
+
+text(matrix(c(1.5, 4.3, 7, 0.5, 0.5, 0.5), 3, 2), 
+     c("class 1", "class -1", "class 1"), 
+     col = c("red", "green3", "red"))
+
+abline(h=0) ; abline(v=c(3, 5.5))
+```
+
+Of course, linear boundary can't discriminate the two classes and we propose 
+to train a nonlinear SVM classifier combined with a second order polynomial 
+kernel defined as: 
+
+\begin{equation*}
+k(\mathbf{x}_1, \mathbf{x}_2) = (\mathbf{x_1}^\top \mathbf{x}_2+1)^2. 
+\end{equation*}
+
+First, we import all the libraries needed :
+
+```{r libraries, message=FALSE}
+library(kernlab)
+library(pROC)
+library(caret)
+library(plotly)
+```
+
+\textbf{Question 1. Write the dual formulation associated with the SVM optimization problem.}
+
+The dual formulation of the problem can be written as :
+
+\begin{equation*}
+\hat{f} = \arg \min_{f \in H_k}  (C \sum_{i=1}^{n}{\phi_{hinge} (y_i * f(x_i)) + \frac{1}{2} * \left\Vert f \right\Vert }_{H_k}^2)
+\end{equation*}
+
+
+From the representer theorem, the solution admits a solution of the form:
+\begin{equation*}
+\hat{f} = \sum_{i=1}^{n}{\alpha_i k(x_i,.)}
+\end{equation*}
+
+So, we need to solve :
+
+\begin{equation*}
+\mu ^{*} = \arg \max_{0<=\mu<=C ; \mu^T y = 0 }  (\mu^T \mathbb{1} - \frac{1}{2} \mu ^T diag(y) K diag(y) \mu)
+\end{equation*}
+\begin{equation*}
+\alpha ^* = diag(y) \mu ^*
+\end{equation*}
+
+\textbf{Question 2. Specify the arguments of the \texttt{kernlab:::ipop} to solve this optimization problem.}
+
+The quadratic programming solver ipop solves the following problem :
+$\min(c'*x + 1/2 * x' * H * x$ 
+\newline
+subject to: 
+$b <= A * x <= b + r ; l <= x <= u$
+
+So, by correspondence between the two equations, we can find that 
+$c = 100\\
+H = diag(y)*K*diag(y)\\
+A = y^{T}\\
+b = 0\\
+l = 0\\
+u = 0\\
+r = 0\\$
+
+
+\textbf{Question 3. With $C = 100$, show that this quadratic optimization yields: }
+
+\begin{equation*}
+\hat \mu_1 = 0, \hat \mu_2 = 2.5, \hat \mu_3 = 0, \hat \mu_4 = 7.333 \text{~and~} \hat \mu_5 = 4.833
+\end{equation*}
+
+```{r ipop, echo = TRUE}
+C = 100
+x = matrix(c(1,2,4,5, 6), ncol = 1)
+y = c(1,1,-1,-1,1)
+
+rbf = polydot(degree = 2, scale = 1, offset = 1)
+K = kernelMatrix(rbf, x)
+
+c = rep(-1,NROW(x))
+H = diag(y)%*%K%*%diag(y)
+
+A = t(y)
+b = 0
+r = 0
+l = rep(0, NROW(x))
+u = rep(C, NROW(x))
+
+ipop(c, H, A, b, l, u, r)
+```
+
+
+So, we find the rigth optimizated parameters.
+
+\textbf{Question 4. From the representer theorem, we know that the solution take the form:}
+
+\begin{equation*}
+f(\mathbf{x}) = \sum_{i=1}^n\mu_i y_i k(\mathbf{x}, \mathbf{x}_i) + b^*
+\end{equation*}
+
+\textbf{Deduce that the optimal solution is quadratic of the form:}
+
+\begin{equation*}
+f(\mathbf{x}) = w_2 \mathbf{x}^2 + w_1 \mathbf{x} + w_0
+\end{equation*}
+
+\textbf{where $w_0$, $w_1$, $w_2$ to determine.}
+
+*Indication*: For determining $w_0$, you can use the fact that $y_if(x_i) = 1$ for any support vectors $x_i$.
+
+We know that $f(\mathbf{x}) = \sum_{i=1}^n\mu_i y_i k(\mathbf{x}, \mathbf{x}_i) + b^*$.
+
+So :
+
+\begin{equation*}
+f(\mathbf{x}) = \mu_2 y_2 k(x, x_2) + \mu_4 y_4 k(x, x_4) + \mu_5 y_5 k(x, x_5) + b^* 
+\end{equation*}
+\begin{equation*}
+\mu_2 = 2,5 ; y_2= 1 ; k(x, x_2) = 4x^2 + 4x + 1
+\end{equation*}
+\begin{equation*}
+\mu_4 = 7,3 ; y_4= -1 ; k(x, x_4) = 25x^2 + 10x + 1
+\end{equation*}
+\begin{equation*}
+\mu_5 = 4,8 ; y_5 = 1 ; k(x, x_5) = 36x^2 + 12x + 1  
+\end{equation*}
+
+So, when developing, we get : $f(\mathbf{x}) = 0,667x^2 - 5,33 x + \tilde{w_0}$
+
+We have : $y_2f(x_2) = 1 \Rightarrow 0,667*(2)^2 - 5,33 * 2 + \tilde{w_0} = 1 \Rightarrow \tilde{w_0} = 9$
+
+
+\textbf{Question 5. Add the optimal decision function to Figure 1.}
+
+```{r}
+f <- function(x){
+return(0.667*x^2-5.333*x+9)
+}
+```
+
+```{r 1_plot, echo = TRUE, fig.cap="Data Visualisation with decision function", fig.align='default', fig.height=5, fig.width=5}
+plot(x, rep(0, 5), pch = c(21, 22)[class], 
+     bg = c("red", "green3")[class], 
+     cex = 1.5, ylim = c(-1.7, 1), xlim = c(0, 8), 
+     ylab = "", xlab = "x", las = 2)
+
+grid()
+
+text(matrix(c(1.5, 4.3, 7, 0.5, 0.5, 0.5), 3, 2), 
+     c("class 1", "class -1", "class 1"), 
+     col = c("red", "green3", "red"))
+
+abline(h=0) ; abline(v=c(3, 5.5))
+
+ind = seq(0,8, l =100)
+points(ind, f(ind), type = "l", col="blue")
+```
+
+# Exercice II : Support Vector Machines and cross validation
+
+In this exercise, we study the \guillemotleft Banana \guillemotright dataset available on Eduano.
+
+\textbf{Question 1. Import and Visualize this data set.}
+
+```{r 2_data, echo = TRUE, fig.cap="Data Visualisation"}
+load("C:\\Users\\antoi\\OneDrive\\Bureau\\CS\\3A\\SDI\\ML\\Cours 3\\Banane.Rdata")
+
+plot(Apprentissage[, 2], Apprentissage[, 1], col = Apprentissage[, 3]+3, 
+     main = "Banana Data", xlab = "x2", ylab = "x1")
+```
+
+\textbf{Question 2.  Train a nonlinear SVM combined with gaussian kernel}\footnote{We recall that within the \texttt{kernlab} library, gaussian kernel is defined as:
+\begin{equation}
+k(\mathbf{x}_i, \mathbf{x}_j) = \text{exp}\bigg(- \sigma \Vert \mathbf{x}_i - \mathbf{x}_j \Vert^2\bigg)
+\end{equation}
+} with $\sigma = 5$ and the regularization parameter $C=5$. 
+
+You can used the \texttt{kernlab:::ksvm()} function.
+
+```{r 2_train, echo = TRUE, fig.cap="Trained nonlinear SVM with gaussian kernel, C = 5, sigma = 5"}
+rbf = rbfdot(sigma = 5)
+C = 5
+model <- ksvm(Y~., data = Apprentissage, kernel = rbf, C=C, type = "C-svc")
+error <- error(model)
+nSV <- nSV(model)
+plot(model, data=Apprentissage)
+```
+
+We obtain a first trained model, with a training error equal to `r error` and `r nSV` support vectors used.
+
+
+\textbf{Question 3. For small value of $\sigma$, we can reduce the exponential function to its first-order Taylor approximation. In this case, prove that the SVM decision boundary is linear.}
+
+We know that 
+\begin{equation*}
+f(\mathbf{x}) = \sum_{i=1}^n\mu_i y_i k(\mathbf{x}, \mathbf{x}_i) + b^*
+\end{equation*}
+For small value of $\sigma$, with the first-order Taylor approximation, we get :
+
+\begin{equation*}
+k(\mathbf{x}, \mathbf{x}_i) = \text{exp}\bigg(- \sigma \Vert \mathbf{x} - \mathbf{x}_i \Vert^2\bigg)
+\approx 1 - \sigma \Vert \mathbf{x} - \mathbf{x}_i \Vert^2 = 1 - \sigma (\Vert \mathbf{x} \Vert^2 + \Vert \mathbf{x}_i \Vert^2 - 2<\mathbf{x} \cdot \mathbf{x}_i>)
+\end{equation*}
+
+That gives :
+
+\begin{equation*}
+f(\mathbf{x}) = \sum_{i=1}^n \mu_i y_i - \sigma \sum_{i=1}^n \mu_i y_i (\Vert \mathbf{x} \Vert^2 + \Vert \mathbf{x}_i \Vert^2 - 2<\mathbf{x} \cdot \mathbf{x}_i>) + b^*
+\end{equation*}
+\begin{equation*}
+= \sum_{i=1}^n \mu_i y_i - \sigma \sum_{i=1}^n \mu_i y_i \Vert \mathbf{x} \Vert^2 - \sigma \sum_{i=1}^n \mu_i y_i \Vert \mathbf{x}_i \Vert^2 + 2\sigma \sum_{i=1}^n \mu_i y_i <\mathbf{x} \cdot \mathbf{x}_i>) + b^*
+\end{equation*}
+\begin{equation*}
+= \sum_{i=1}^n \mu_i y_i - \sigma \Vert \mathbf{x} \Vert^2 \sum_{i=1}^n \mu_i y_i - \sigma \sum_{i=1}^n \mu_i y_i \Vert \mathbf{x}_i \Vert^2 + 2\sigma \sum_{i=1}^n \mu_i y_i <\mathbf{x} \cdot \mathbf{x}_i>) + b^*
+\end{equation*}
+
+Or, minimizing the loss function in an SVM problem, we get $\mu^T y = 0$, which is $\sum_{i=1}^n \mu_i y_i = 0$. So finally, we have :
+
+\begin{equation*}
+f(\mathbf{x}) = - \sigma \sum_{i=1}^n \mu_i y_i \Vert \mathbf{x}_i \Vert^2 + 2\sigma \sum_{i=1}^n \mu_i y_i <\mathbf{x} \cdot \mathbf{x}_i>) + b^*
+\end{equation*}
+
+With the linearity of the scalar product, we can conclude that the SVM decision boundary is linear when $\sigma$ is small.
+
+
+\textbf{Question 4. Visualize  the SVM model (using `plot.ksvm()`) and discuss the impact of $C$ and $\sigma$ on the boundary and on the number of support vectors.}
+
+Let fix $C = 5$ and see the impact of $\sigma$ :
+
+```{r 2_impactsig, echo = TRUE}
+sigmas = c(0.5, 2, 5, 10)
+C = 5
+for (sig in sigmas) {
+rbf = rbfdot(sigma = sig)
+model <- ksvm(Y~., data = Apprentissage, kernel = rbf, C=C, type = "C-svc")
+plot(model, data=Apprentissage, )
+title(main = paste("                            s = ", sig))
+}
+```
+
+```{r r2_plot_sig_err, echo = TRUE}
+sigmas = (1:20)/2
+C = 5
+SV = c()
+err = c()
+
+for (sig in sigmas){
+rbf = rbfdot(sigma = sig)
+model <- ksvm(Y~., data = Apprentissage, kernel = rbf, C=C, type = "C-svc")
+SV <- c(SV, nSV(model))
+err <- c(err, error(model))
+}
+plot(sigmas, SV, main = "nSV function of sigma")
+plot(sigmas, err, main = "error function of sigma")
+```
+
+We can see that the number of support vectors increases with $\sigma$. The error decreases with $\sigma$ but it creates a lot of overfitting on the training set. That explains why we need to use cross-validation.
+
+
+Now, let fix $\sigma = 5$ and see the impact of C :
+
+```{r 2_impactC, echo = TRUE}
+sig = 5
+Cs = c(0.5, 2, 5, 10)
+for (C in Cs) {
+rbf = rbfdot(sigma = sig)
+model <- ksvm(Y~., data = Apprentissage, kernel = rbf, C=C, type = "C-svc")
+plot(model, data=Apprentissage, )
+title(main = paste("                            C = ", C))
+}
+```
+
+```{r r2_plot_c_err, echo = TRUE}
+Cs = (1:20)/2
+sig = 5
+SV = c()
+err = c()
+
+for (C in Cs){
+rbf = rbfdot(sigma = sig)
+model <- ksvm(Y~., data = Apprentissage, kernel = rbf, C=C, type = "C-svc")
+SV <- c(SV, nSV(model))
+err <- c(err, error(model))
+}
+plot(sigmas, SV, main = "nSV function of C")
+plot(sigmas, err, main = "error function of C")
+```
+
+We can see that the number of support vectors increases with C. The error decreases with C but it creates a lot of overfitting on the training set. That explains why we need to use cross-validation.
+
+
+\textbf{Question 5. Show the evolution of the cross-validated error rate as function of $C$ and $\sigma$. Deduce the optimal values $(C^*, \sigma^*)$ for $C$ and $\sigma$.}
+
+
+We compute the cross validation on the Apprentissage set, for values of $\sigma$ and C between 0.2 and 10, with a step of 0.2. We choose to divide the Apprentissage set in 7 sets for the cross validation.
+
+```{r}
+Cs = (1:100)/10
+sigmas = (1:100)/10
+c_val <- c()
+sig_val <- c()
+e <- c()
+
+for (C in Cs){
+for (sig in sigmas){
+rbf = rbfdot(sigma = sig)
+model <- ksvm(Y~., data = Apprentissage, kernel = rbf, C=C, type = "C-svc", cross = 7)
+err <- cross(model)
+c_val <- c(c_val, C)
+sig_val <- c(sig_val, sig)
+e <- c(e, err)
+}
+}
+```
+
+
+
+```{r min_error, echo= TRUE, fig.cap = "Visualisation de l'erreur en fonction de C et sigma"}
+df = data.frame(c_val, sig_val, e)
+ggp <- ggplot(df, aes(c_val, sig_val)) + geom_tile(aes(fill = e))
+ggp + scale_fill_gradient(low = "white", high = "black")
+```
+
+
+
+We will try to find precisely the minimum :
+
+```{r}
+sig_hat <- sig_val[1]
+c_hat <- c_val[1]
+err_min <- e[1]
+for (i in 1:length(e)){
+if (e[i]<err_min){
+err_min <- e[i]
+sig_hat <- sig_val[i]
+c_hat <- c_val[i]
+}
+}
+sig_hat
+c_hat
+err_min
+```
+
+
+Let fix the value of $\sigma$ = $`r sig_hat`$ et C = $`r c_hat`$ to try our model on the Test set
+.
+
+\textbf{Question 6. Build the optimal SVM model and evaluate this model on the training set. Report the test error rate.}
+
+```{r Test, echo = TRUE}
+res.ksvm = ksvm(Y~., data=Apprentissage, kernel="rbfdot", type = "C-svc",
+               kpar=list(sigma=sig_hat),C=c_hat,cross=7)
+
+plot(res.ksvm, data = Apprentissage)
+res.ksvm@error
+res.ksvm@cross
+res.ksvm@nSV
+
+ytest_obs = factor(Test[, 3])
+ytest_pred = factor(predict(res.ksvm, Test[, -3], type = "response"))
+
+confusionMatrix(ytest_pred, ytest_obs)
+
+res.ksvm = ksvm(Y~., data=Apprentissage, kernel="rbfdot", type = "C-svc",
+                kpar=list(sigma=sig_hat),C=c_hat,cross=7, prob.model = TRUE)
+
+prob_test = predict(res.ksvm, Test[, -3], type = "probabilities")
+
+
+fit.roc = roc(Test[, 3], prob_test[, 2])
+plot(fit.roc, print.thres = "best")
+
+plot(fit.roc, print.thres = "best")
+auc(fit.roc)
+
+YYY = rep(1, NROW(Test))
+YYY[prob_test[, 2]<0.507]=-1
+
+sensitivity = round(1864/(1864+340), 3)
+specificity = round(2474/(2474+222), 3)
+```
+
+Finally, we find an accuracy of 89% on the Test set, for values of $\sigma$ = $`r sig_hat`$ and C = $`r c_hat`$. That seems to be a very good score for our study.
