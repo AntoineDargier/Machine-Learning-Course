@@ -17,5 +17,5 @@ Find the best unsupervised classification. Use of probabilistic models.
 * ```scipy```
 
 ### Conclusion 
-In this study we implemented the kmeans algorithm. We found that the kmeans were very dependent on the initialization, and that the output could therefore vary greatly from one classification to another.
-The CEM algorithm has much less variability, and enables us to find the two classes more accurately. It seems more appropriate to use it for this type of unsupervised classification.
+In this study I implemented the kmeans algorithm. I found that the kmeans were very dependent on the initialization, and that the output could therefore vary greatly from one classification to another.
+The CEM algorithm has much less variability, and enables me to find the two classes more accurately. It seems more appropriate to use it for this type of unsupervised classification.
