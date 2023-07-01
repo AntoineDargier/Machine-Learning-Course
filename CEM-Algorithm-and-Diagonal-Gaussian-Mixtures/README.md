@@ -1,7 +1,7 @@
 # CEM-Algorithm-and-Diagonal-Gaussian-Mixtures
 
 ### Goal
-Find the best unsupervised classification. Use of probabilistic models.
+Find the best-unsupervised classification. Use of probabilistic models.
 
 ### Language
 ```Python```
@@ -11,7 +11,7 @@ Find the best unsupervised classification. Use of probabilistic models.
 2. Writing the kmeans algorithm and improvements
 3. Implementation of the CEM algorithm
 
-### Librairies
+### Libraries
 * ```numpy```
 * ```matplotlib```
 * ```scipy```
